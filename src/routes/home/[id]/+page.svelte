@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { homes } from '$stores/homes.js';
-  import { addToast } from '$stores/app.js';
+  import { toast } from '$stores/app.js';
   import EmptyState from '$components/EmptyState.svelte';
   import Skeleton from '$components/Skeleton.svelte';
   import Modal from '$components/Modal.svelte';
@@ -26,7 +26,7 @@
   let showRoomModal = false;
   let roomForm = { name: '', colorTag: '#E8F3E0', floorType: 'wood', ceilingHeight: 2.4 };
 
-  // Canvas size (responsive)
+  // Canvas size
   let canvasWidth = 800;
   let canvasHeight = 600;
 
@@ -43,7 +43,7 @@
       home = await homes.get(homeId);
       
       if (!home) {
-        addToast('Home not found', 'error');
+        toast.error('Home not found');
         loading = false;
         return;
       }
@@ -55,7 +55,7 @@
       }
     } catch (err) {
       console.error('Failed to load home:', err);
-      addToast('Error loading home', 'error');
+      toast.error('Error loading home');
     }
     
     loading = false;
@@ -63,11 +63,9 @@
 
   async function initFabric() {
     try {
-      // Dynamically import Fabric.js
       const fabricModule = await import('fabric');
       Fabric = fabricModule.fabric || fabricModule.default;
       
-      // Set canvas size based on container
       const container = canvasEl?.parentElement;
       if (container) {
         canvasWidth = container.clientWidth || 800;
@@ -77,7 +75,7 @@
       initCanvas();
     } catch (err) {
       console.error('Fabric.js failed to load:', err);
-      addToast('Could not load drawing engine', 'error');
+      toast.error('Could not load drawing engine');
     }
   }
 
@@ -90,21 +88,17 @@
       selection: false,
       backgroundColor: '#FAF8F4',
       preserveObjectStacking: true,
-      // Make canvas responsive
-      allowTouchScrolling: false
+      allowTouchScrolling: false,
+      renderOnAddRemove: true
     });
 
-    // Draw background grid
     drawGrid();
 
-    // Load existing rooms
     if (rooms.length > 0) {
       rooms.forEach(room => renderRoom(room));
     }
 
-    // Set up events for both mouse and touch
     setupCanvasEvents();
-
     fabricCanvas.renderAll();
   }
 
@@ -138,57 +132,40 @@
   }
 
   function setupCanvasEvents() {
-    if (!fabricCanvas) return;
-
-    // Tap to place wall point
-    fabricCanvas.on('mouse:down', (opt) => {
-      handleTap(opt);
-    });
-
-    // Touch events for mobile
-    fabricCanvas.on('touch:gesture', () => {
-      // Prevent default to avoid page scroll
-    });
-
-    // Pinch zoom
-    fabricCanvas.on('mouse:wheel', (opt) => {
-      const delta = opt.e.deltaY;
-      let zoom = fabricCanvas.getZoom();
-      zoom *= 0.999 ** delta;
-      zoom = Math.max(0.3, Math.min(3, zoom));
-      fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-      opt.e.preventDefault();
-      opt.e.stopPropagation();
-    });
+    if (!canvasEl) return;
+    canvasEl.addEventListener('pointerdown', handlePointerDown);
+    canvasEl.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   }
 
-  function handleTap(opt) {
+  function handlePointerDown(e) {
+    e.preventDefault();
+    
     if (activeTool !== 'wall') return;
     
-    const pointer = fabricCanvas.getPointer(opt.e, false);
-    const snapped = snapToGrid(pointer);
+    const rect = canvasEl.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     
-    // Add the wall point
-    wallPoints.push({ x: snapped.x, y: snapped.y });
+    const snapped = snapToGrid({ x, y });
     
-    // Draw a dot at the corner
+    wallPoints.push(snapped);
+    
+    // Draw dot
     const dot = new Fabric.Circle({
       left: snapped.x - 5,
       top: snapped.y - 5,
       radius: 5,
-      fill: '#2D5A27',
+      fill: '#1E3D1E',
       selectable: false,
       evented: false
     });
     fabricCanvas.add(dot);
     tempLines.push(dot);
-
-    // If we have at least 2 points, draw a wall line
+    
+    // Draw line from previous point
     if (wallPoints.length >= 2) {
       const prev = wallPoints[wallPoints.length - 2];
-      const curr = wallPoints[wallPoints.length - 1];
-      
-      const line = new Fabric.Line([prev.x, prev.y, curr.x, curr.y], {
+      const line = new Fabric.Line([prev.x, prev.y, snapped.x, snapped.y], {
         stroke: '#1E3D1E',
         strokeWidth: 4,
         selectable: false,
@@ -197,8 +174,7 @@
       fabricCanvas.add(line);
       tempLines.push(line);
     }
-
-    // If we have at least 3 points, enable finish
+    
     isDrawing = true;
     fabricCanvas.renderAll();
   }
@@ -215,7 +191,7 @@
     wallPoints = [];
     clearTempLines();
     isDrawing = false;
-    addToast('Tap on the canvas to place wall corners', 'info');
+    toast.info('Tap on the canvas to place wall corners');
   }
 
   function clearTempLines() {
@@ -234,11 +210,10 @@
 
   function finishRoom() {
     if (wallPoints.length < 3) {
-      addToast('A room needs at least 3 corner points', 'error');
+      toast.error('A room needs at least 3 corner points');
       return;
     }
 
-    // Close the shape by connecting last to first
     const first = wallPoints[0];
     const last = wallPoints[wallPoints.length - 1];
     
@@ -251,7 +226,6 @@
     fabricCanvas.add(closingLine);
     tempLines.push(closingLine);
 
-    // Show the room details modal
     roomForm = {
       name: `Room ${rooms.length + 1}`,
       colorTag: randomColor(),
@@ -275,32 +249,25 @@
       furniture: []
     };
 
-    // Clear the temporary wall lines
     clearTempLines();
-
-    // Render the room as a polygon
     renderRoom(roomData);
 
-    // Save to store
     await homes.addRoom(home.id, roomData);
     
-    // Update local state
     rooms = [...rooms, roomData];
     
-    // Reset drawing state
     wallPoints = [];
     isDrawing = false;
     activeTool = 'select';
     showRoomModal = false;
     
-    addToast(`"${roomData.name}" added!`, 'success');
+    toast.success(`"${roomData.name}" added!`);
     fabricCanvas.renderAll();
   }
 
   function renderRoom(room) {
     if (!fabricCanvas || !room.points || room.points.length < 3) return;
 
-    // Create polygon
     const polygon = new Fabric.Polygon(room.points, {
       fill: hexToRgba(room.colorTag || '#E8F3E0', 0.35),
       stroke: room.colorTag || '#2D5A27',
@@ -313,7 +280,6 @@
 
     fabricCanvas.add(polygon);
 
-    // Add label
     const center = getPolygonCenter(room.points);
     const label = new Fabric.Text(room.name || 'Room', {
       left: center.x - 30,
@@ -328,10 +294,6 @@
     });
     fabricCanvas.add(label);
 
-    // Store label reference with polygon
-    polygon._label = label;
-
-    // Click to open room
     polygon.on('mousedown', () => {
       if (activeTool === 'select' && room.id) {
         goto(`/home/${home.id}/room/${room.id}`);
@@ -360,21 +322,23 @@
   async function deleteRoom(room) {
     if (!confirm(`Delete "${room.name}"?`)) return;
     
-    // Remove from canvas
     const objects = fabricCanvas.getObjects();
     objects.forEach(obj => {
-      if (obj.roomData?.id === room.id || obj._label?.roomData?.id === room.id) {
+      if (obj.roomData?.id === room.id) {
         fabricCanvas.remove(obj);
       }
     });
 
     await homes.removeRoom(home.id, room.id);
     rooms = rooms.filter(r => r.id !== room.id);
-    addToast(`"${room.name}" deleted`, 'info');
+    toast.info(`"${room.name}" deleted`);
     fabricCanvas.renderAll();
   }
 
   onDestroy(() => {
+    if (canvasEl) {
+      canvasEl.removeEventListener('pointerdown', handlePointerDown);
+    }
     if (fabricCanvas) {
       fabricCanvas.dispose();
       fabricCanvas = null;
@@ -383,7 +347,6 @@
 </script>
 
 <div class="floorplan-page">
-  <!-- Header -->
   <header class="floorplan-header">
     <a href="/" class="back-link">←</a>
     <h1>{home?.name || 'Loading...'}</h1>
@@ -393,7 +356,6 @@
   {#if loading}
     <Skeleton height="400px" />
   {:else}
-    <!-- Toolbar -->
     <div class="toolbar">
       <button
         class="tool-btn"
@@ -419,7 +381,6 @@
       {/if}
     </div>
 
-    <!-- Drawing hint -->
     {#if activeTool === 'wall'}
       <div class="draw-hint">
         {wallPoints.length < 3
@@ -428,7 +389,6 @@
       </div>
     {/if}
 
-    <!-- Canvas -->
     <div class="canvas-wrapper">
       <canvas
         bind:this={canvasEl}
@@ -438,7 +398,6 @@
       ></canvas>
     </div>
 
-    <!-- Room list -->
     {#if rooms.length > 0}
       <section class="room-list-section">
         <h2>Rooms</h2>
@@ -465,7 +424,6 @@
   {/if}
 </div>
 
-<!-- Room Modal -->
 <Modal open={showRoomModal} title="Save Room" on:close={() => showRoomModal = false}>
   <form on:submit|preventDefault={saveRoomFromModal} class="room-form">
     <label for="room-name">Room name</label>
@@ -538,7 +496,6 @@
     white-space: nowrap;
   }
 
-  /* Toolbar */
   .toolbar {
     display: flex;
     gap: 0.4rem;
@@ -572,7 +529,6 @@
     opacity: 0.4;
   }
 
-  /* Draw hint */
   .draw-hint {
     text-align: center;
     padding: 0.5rem;
@@ -583,7 +539,6 @@
     margin-bottom: 0.5rem;
   }
 
-  /* Canvas */
   .canvas-wrapper {
     background: white;
     border-radius: 12px;
@@ -593,6 +548,7 @@
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
+    position: relative;
   }
 
   #floorplan-canvas {
@@ -600,7 +556,6 @@
     display: block;
   }
 
-  /* Room list */
   .room-list-section h2 {
     font-size: 0.9rem;
     margin-bottom: 0.5rem;
@@ -643,7 +598,6 @@
     opacity: 0.5;
   }
 
-  /* Modal form */
   .room-form {
     display: flex;
     flex-direction: column;
@@ -651,6 +605,12 @@
   }
 
   .room-form label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .form-label {
     font-size: 0.8rem;
     font-weight: 600;
     color: #555;
