@@ -312,7 +312,7 @@
 
   {#if arState === 'viewing'}
     <div class="controls">
-      <label>Opacity</label>
+      <label for="opacity-slider">Opacity</label>
       <input type="range" min="0.1" max="1" step="0.05" value={opacity} on:input={(e) => updateOpacity(parseFloat(e.target.value))} />
       <button class="exit" on:click={() => arSession?.end()}>✕</button>
     </div>

@@ -396,7 +396,7 @@
     <!-- Furniture drawer -->
     {#if drawerOpen}
       <div class="drawer">
-        <div class="drawer-handle" on:click={() => drawerOpen = false}>
+        <button class="drawer-handle" on:click={() => drawerOpen = false} aria-label="Close drawer">
           <span></span>
         </div>
         <h3>Add Furniture</h3>

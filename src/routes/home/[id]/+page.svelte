@@ -471,7 +471,7 @@
     <label for="room-name">Room name</label>
     <input id="room-name" type="text" bind:value={roomForm.name} />
 
-    <label>Colour</label>
+    <span class="form-label">Colour</span>
     <div class="color-row">
       {#each ['#E8F3E0', '#F0EBE1', '#E8D5D5', '#D5E0E8', '#E8E0D5', '#D5E8E0', '#FFE0CC', '#CCE0FF'] as color}
         <button
