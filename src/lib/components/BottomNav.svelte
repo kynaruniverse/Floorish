@@ -1,25 +1,16 @@
 <script>
   import { page } from '$app/stores';
-  import { inventory } from '$stores/inventory.js';
 
   const navItems = [
-    { path: '/', label: 'Home', icon: '🏠', exact: true },
-    { path: '/inventory', label: 'Inventory', icon: '📦' },
-    { path: '/catalogue', label: 'Catalogue', icon: '🛋️' },
-    { path: '/ai', label: 'AI', icon: '🤖' },
-    { path: '/settings', label: 'Settings', icon: '⚙️' }
+    { path: '/app', label: 'Homes', icon: 'home', exact: true },
+    { path: '/app/settings', label: 'Settings', icon: 'settings' }
   ];
 
   $: activePath = $page.url.pathname;
-  $: inventoryCount = $inventory.length;
 
   function isActive(item) {
     if (item.exact) return activePath === item.path;
-    return activePath === item.path || activePath.startsWith(item.path + '/');
-  }
-
-  function hapticTap() {
-    if (navigator.vibrate) navigator.vibrate(10);
+    return activePath.startsWith(item.path);
   }
 </script>
 
@@ -30,14 +21,26 @@
       class="nav-item"
       class:active={isActive(item)}
       aria-current={isActive(item) ? 'page' : undefined}
-      on:click={hapticTap}
     >
-      <span class="nav-icon-wrapper">
-        <span class="nav-icon">{item.icon}</span>
-        {#if item.path === '/inventory' && inventoryCount > 0}
-          <span class="nav-badge">{inventoryCount}</span>
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        {#if item.icon === 'home'}
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        {:else if item.icon === 'settings'}
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         {/if}
-      </span>
+      </svg>
       <span class="nav-label">{item.label}</span>
     </a>
   {/each}
@@ -49,82 +52,39 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: #fff;
-    border-top: 1px solid #e8e8e8;
-    z-index: 100;
+    display: flex;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    z-index: 100;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   }
 
   .nav-item {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0.2rem;
-    padding: 0.4rem 0.6rem;
-    border-radius: 12px;
-    color: #888;
+    color: var(--text-muted);
     text-decoration: none;
-    flex: 1;
-    transition: all 0.2s;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    transition: color var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
   }
 
   .nav-item.active {
-    color: #1E3D1E;
-    background: #E8F3E0;
+    color: var(--primary);
     font-weight: 600;
   }
 
-  .nav-icon-wrapper {
-    position: relative;
-    display: inline-flex;
-    line-height: 1;
-  }
-
-  .nav-icon {
-    font-size: 1.3rem;
-  }
-
-  .nav-badge {
-    position: absolute;
-    top: -6px;
-    right: -8px;
-    background: #C62828;
-    color: #fff;
-    font-size: 0.6rem;
-    font-weight: 700;
-    min-width: 16px;
-    height: 16px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 3px;
+  .nav-item:active {
+    opacity: 0.7;
   }
 
   .nav-label {
-    font-size: 0.62rem;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  @media (min-width: 768px) {
-    .bottom-nav {
-      top: 0;
-      bottom: auto;
-      border-top: none;
-      border-bottom: 1px solid #e8e8e8;
-      display: flex;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    .nav-item {
-      flex-direction: row;
-      gap: 0.4rem;
-      padding: 0.5rem 1rem;
-      flex: 0 1 auto;
-    }
-    .nav-label {
-      font-size: 0.8rem;
-    }
+    font-size: 0.65rem;
   }
 </style>
