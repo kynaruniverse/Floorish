@@ -88,7 +88,7 @@
         </svg>
       </div>
       <h3>See It in 3D</h3>
-      <p>Switch to 3D view and walk through your space before committing.</p>
+      <p>Switch to 3D view and orbit your space before committing.</p>
     </div>
 
     <div class="feature-card">
