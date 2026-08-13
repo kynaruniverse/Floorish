@@ -1,0 +1,1 @@
+import{w as d}from"./mQ1Upxgg.js";const e=d([]);let n=0;function c(o,a="info",t=3e3){const s=++n;e.update(i=>[...i,{id:s,message:o,type:a,duration:t}]),setTimeout(()=>r(s),t)}function r(o){e.update(a=>a.filter(t=>t.id!==o))}export{c as a,r,e as t};
