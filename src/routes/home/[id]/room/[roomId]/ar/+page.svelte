@@ -2,40 +2,39 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { homes } from '$stores/homes.js';
-  import { addToast } from '$stores/app.js';
+  import { toast } from '$stores/app.js';
   import { browser } from '$app/environment';
 
-  let home;
-  let room;
+  let home = null;
+  let room = null;
   let loading = true;
-  let arSupported = false;
-  let arSession = null;
-  let arState = 'checking'; // checking | permission-denied | scanning | placing | viewing | unsupported
-  let opacity = 0.8;
-  let screenshotData = null;
-  let showScreenshot = false;
+  let arState = 'checking'; // checking | unsupported | permission-denied | scanning | viewing | ended
   let errorMessage = '';
+  let containerEl;
 
-  // AR objects
+  // Three.js
   let THREE;
   let scene, camera, renderer;
-  let reticle;
-  let placedRoom;
+  let reticle, placedRoom;
   let hitTestSource = null;
-  let hitTestSourceRequested = false;
-  let localReferenceSpace = null;
-  let containerEl;
+  let arSession = null;
+  let opacity = 0.8;
 
   onMount(async () => {
     const homeId = $page.params.id;
     const roomId = $page.params.roomId;
 
-    const db = await import('idb').then(m => m.openDB('floorish-db', 1));
-    home = await db.get('homes', homeId);
-    room = home?.rooms?.find(r => r.id === roomId);
+    try {
+      home = await homes.get(homeId);
+      room = home?.rooms?.find(r => r.id === roomId);
 
-    if (!room) {
-      addToast('Room not found', 'error');
+      if (!home || !room) {
+        toast.error('Room not found');
+        loading = false;
+        return;
+      }
+    } catch (err) {
+      toast.error('Error loading room');
       loading = false;
       return;
     }
@@ -43,47 +42,43 @@
     loading = false;
 
     if (browser) {
-      await checkARSupport();
+      await checkAR();
     }
   });
 
-  async function checkARSupport() {
-    // Check for WebXR support
-    if (!navigator.xr) {
+  async function checkAR() {
+    // Most mobile browsers don't support WebXR AR yet
+    if (!navigator.xr || !navigator.xr.isSessionSupported) {
       arState = 'unsupported';
-      errorMessage = 'WebXR not available on this device. Try the Walkthrough mode instead.';
+      errorMessage = 'AR is not supported on this device or browser.';
       return;
     }
 
     try {
       const supported = await navigator.xr.isSessionSupported('immersive-ar');
-      arSupported = supported;
-      
       if (supported) {
         arState = 'scanning';
-        await startARSession();
+        await startAR();
       } else {
         arState = 'unsupported';
-        errorMessage = 'AR not supported on this device. Try the Walkthrough mode instead.';
+        errorMessage = 'AR is not supported on this device.';
       }
     } catch (err) {
       arState = 'unsupported';
-      errorMessage = 'Could not initialize AR: ' + err.message;
+      errorMessage = 'Could not start AR: ' + err.message;
     }
   }
 
-  async function startARSession() {
+  async function startAR() {
     try {
       THREE = await import('three');
 
-      // Request AR session
       arSession = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test', 'dom-overlay'],
-        domOverlay: { root: document.getElementById('ar-overlay') },
-        optionalFeatures: ['light-estimation']
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'light-estimation']
       });
 
-      await setupARScene(arSession);
+      await setupScene(arSession);
       arState = 'scanning';
 
       arSession.addEventListener('end', () => {
@@ -94,7 +89,7 @@
     } catch (err) {
       if (err.name === 'NotAllowedError') {
         arState = 'permission-denied';
-        errorMessage = 'Camera access denied. Please enable camera permissions to use AR.';
+        errorMessage = 'Camera permission was denied.';
       } else {
         arState = 'unsupported';
         errorMessage = 'AR session failed: ' + err.message;
@@ -102,77 +97,57 @@
     }
   }
 
-  async function setupARScene(session) {
-    // Create scene
+  async function setupScene(session) {
     scene = new THREE.Scene();
 
-    // Camera
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ 
-      antialias: true, 
-      alpha: true,
-      preserveDrawingBuffer: true // for screenshots
-    });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.xr.enabled = true;
-    renderer.xr.setReferenceSpaceType('local');
+    containerEl.appendChild(renderer.domElement);
 
-    // Add reticle for surface detection
-    const ringGeometry = new THREE.RingGeometry(0.15, 0.2, 32);
-    ringGeometry.rotateX(-Math.PI / 2);
-    const ringMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x4A8C3F, 
+    // Reticle
+    const ringGeo = new THREE.RingGeometry(0.15, 0.2, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x4A8C3F,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0.7
     });
-    reticle = new THREE.Mesh(ringGeometry, ringMaterial);
+    reticle = new THREE.Mesh(ringGeo, ringMat);
     reticle.matrixAutoUpdate = false;
     reticle.visible = false;
     scene.add(reticle);
 
-    // Add a subtle grid on the reticle
-    const gridHelper = new THREE.GridHelper(0.4, 8, 0x4A8C3F, 0x8CC97A);
-    gridHelper.material.transparent = true;
-    gridHelper.material.opacity = 0.5;
-    reticle.add(gridHelper);
-
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(0, 5, 3);
-    scene.add(directionalLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(0, 5, 3);
+    scene.add(sun);
 
-    // Set up hit testing
+    // Hit testing
     session.requestReferenceSpace('local').then((refSpace) => {
-      localReferenceSpace = refSpace;
       session.requestHitTestSource({ space: refSpace }).then((source) => {
         hitTestSource = source;
       });
     });
 
-    // Handle select event (tap to place)
     session.addEventListener('select', onSelect);
 
     // Render loop
     renderer.setAnimationLoop((timestamp, frame) => {
       if (!frame) return;
-      
-      const referenceSpace = renderer.xr.getReferenceSpace();
-      const session = renderer.xr.getSession();
 
-      if (hitTestSource && referenceSpace && !placedRoom) {
-        const hitTestResults = frame.getHitTestResults(hitTestSource);
-        
-        if (hitTestResults.length > 0) {
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(referenceSpace);
-          
+      const refSpace = renderer.xr.getReferenceSpace();
+      const xrSession = renderer.xr.getSession();
+
+      if (hitTestSource && refSpace && !placedRoom) {
+        const results = frame.getHitTestResults(hitTestSource);
+        if (results.length > 0) {
+          const pose = results[0].getPose(refSpace);
           reticle.visible = true;
           reticle.matrix.fromArray(pose.transform.matrix);
         } else {
@@ -182,143 +157,98 @@
 
       renderer.render(scene, camera);
     });
-
-    containerEl.appendChild(renderer.domElement);
   }
 
   function onSelect() {
-    if (!reticle.visible || !reticle.matrix || placedRoom) return;
+    if (!reticle?.visible || !reticle?.matrix || placedRoom) return;
 
-    // Place the room model at reticle position
     placedRoom = new THREE.Group();
-    
-    // Copy reticle position and rotation
     placedRoom.matrix.copy(reticle.matrix);
-    placedRoom.matrix.decompose(
-      placedRoom.position,
-      placedRoom.quaternion,
-      placedRoom.scale
-    );
+    placedRoom.matrix.decompose(placedRoom.position, placedRoom.quaternion, placedRoom.scale);
 
-    // Build room visualization
     buildRoomVisualization(placedRoom);
-    
     scene.add(placedRoom);
     reticle.visible = false;
     arState = 'viewing';
   }
 
-  function buildRoomVisualization(parentGroup) {
-    if (!room || !room.points || room.points.length < 3) return;
+  function buildRoomVisualization(group) {
+    if (!room.points || room.points.length < 3) return;
 
-    // Scale factor from floor plan units to real meters
-    const scale = 1 / 20; // floor plan units to meters
-
-    // Build walls
+    const scale = 1 / 20;
     const points3D = room.points.map(p => new THREE.Vector2(p.x * scale, p.y * scale));
     const shape = new THREE.Shape(points3D);
     const height = room.ceilingHeight || 2.4;
-    
-    const extrudeSettings = { steps: 1, depth: height, bevelEnabled: false };
-    const wallGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-    const wallMaterial = new THREE.MeshStandardMaterial({
-      color: room.colorTag || 0xE8F3E0,
+
+    // Walls
+    const wallGeo = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: height, bevelEnabled: false });
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: hexToNumber(room.colorTag || '#E8F3E0'),
       roughness: 0.7,
-      metalness: 0.05,
-      side: THREE.DoubleSide,
       transparent: true,
-      opacity: opacity * 0.7
+      opacity: opacity * 0.7,
+      side: THREE.DoubleSide
     });
-    
-    const walls = new THREE.Mesh(wallGeometry, wallMaterial);
+    const walls = new THREE.Mesh(wallGeo, wallMat);
     walls.rotation.x = -Math.PI / 2;
-    walls.position.y = 0;
-    parentGroup.add(walls);
+    group.add(walls);
 
     // Floor
-    const floorGeometry = new THREE.ShapeGeometry(shape);
-    const floorMaterial = new THREE.MeshStandardMaterial({
+    const floorGeo = new THREE.ShapeGeometry(shape);
+    const floorMat = new THREE.MeshStandardMaterial({
       color: 0xC4A882,
       roughness: 0.5,
       transparent: true,
       opacity: opacity * 0.5
     });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = 0.005;
-    parentGroup.add(floor);
+    group.add(floor);
 
-    // Edge outline
-    const edgeGeometry = new THREE.EdgesGeometry(wallGeometry);
-    const edgeMaterial = new THREE.LineBasicMaterial({ 
-      color: 0x2D5A27, 
-      transparent: true, 
-      opacity: opacity 
-    });
-    const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-    edges.rotation.x = -Math.PI / 2;
-    parentGroup.add(edges);
-
-    // Add placed furniture if any
+    // Furniture
     if (room.furniture) {
       room.furniture.forEach(item => {
         const { width, height: h, depth } = item.dimensions || { width: 1, height: 1, depth: 1 };
-        const boxGeometry = new THREE.BoxGeometry(width, h, depth);
-        const boxMaterial = new THREE.MeshStandardMaterial({
+        const boxGeo = new THREE.BoxGeometry(width, h, depth);
+        const boxMat = new THREE.MeshStandardMaterial({
           color: 0x8B6F5E,
           roughness: 0.6,
           transparent: true,
-          opacity: opacity
+          opacity
         });
-        const box = new THREE.Mesh(boxGeometry, boxMaterial);
+        const box = new THREE.Mesh(boxGeo, boxMat);
         box.position.set(
           (item.position?.x || 0) * scale,
           (item.position?.y || 0) * scale + h / 2,
           (item.position?.z || 0) * scale
         );
         box.rotation.y = item.rotation || 0;
-        parentGroup.add(box);
+        group.add(box);
       });
     }
+  }
+
+  function hexToNumber(hex) {
+    return parseInt(hex.replace('#', ''), 16);
   }
 
   function updateOpacity(value) {
     opacity = value;
     if (placedRoom) {
       placedRoom.traverse(child => {
-        if (child.material && child.material.transparent) {
-          child.material.opacity = opacity * (child.material.opacity <= 0.5 ? 0.5 : 0.7);
+        if (child.material?.transparent) {
+          child.material.opacity = opacity * 0.7;
         }
       });
     }
   }
 
-  function takeScreenshot() {
-    if (!renderer) return;
-    
-    renderer.render(scene, camera);
-    screenshotData = renderer.domElement.toDataURL('image/png');
-    showScreenshot = true;
-    
-    // Also try to capture the real world via media stream if available
-    addToast('Screenshot captured!', 'success');
-  }
-
-  function downloadScreenshot() {
-    if (!screenshotData) return;
-    const link = document.createElement('a');
-    link.download = `floorish-ar-${room.name}-${Date.now()}.png`;
-    link.href = screenshotData;
-    link.click();
-  }
-
-  async function retryAR() {
+  async function retry() {
     arState = 'checking';
     errorMessage = '';
-    if (arSession) {
-      await arSession.end();
-    }
-    await checkARSupport();
+    if (arSession) await arSession.end();
+    await checkAR();
   }
 
   onDestroy(() => {
@@ -329,123 +259,66 @@
         containerEl.removeChild(renderer.domElement);
       }
     }
-    if (arSession) {
-      arSession.end();
-    }
+    if (arSession) arSession.end();
   });
 </script>
 
 <div class="ar-page">
-  <!-- AR Viewport -->
   <div class="ar-viewport" bind:this={containerEl}>
-    <!-- States -->
     {#if arState === 'checking'}
-      <div class="ar-state-overlay">
+      <div class="overlay">
         <div class="spinner"></div>
         <p>Checking AR support...</p>
       </div>
 
-    {:else if arState === 'permission-denied'}
-      <div class="ar-state-overlay error">
-        <span class="state-icon">🔒</span>
-        <h2>Camera Access Needed</h2>
+    {:else if arState === 'unsupported'}
+      <div class="overlay">
+        <span class="big-icon">📱</span>
+        <h2>AR Not Available</h2>
         <p>{errorMessage}</p>
-        <div class="state-actions">
-          <button class="btn-primary" on:click={retryAR}>Try Again</button>
-          <a href="/home/{$page.params.id}/room/{$page.params.roomId}/walkthrough" class="btn-secondary">
-            Use Walkthrough Instead →
-          </a>
-        </div>
+        <a href="/home/{$page.params.id}/room/{$page.params.roomId}/walkthrough" class="btn">
+          🚶 Use Walkthrough Mode
+        </a>
+        <button class="btn-link" on:click={retry}>Retry</button>
       </div>
 
-    {:else if arState === 'unsupported'}
-      <div class="ar-state-overlay">
-        <span class="state-icon">📱</span>
-        <h2>AR Not Available</h2>
-        <p>{errorMessage || 'Your device doesn\'t support AR. Try the walkthrough mode for a similar experience.'}</p>
-        <div class="state-actions">
-          <button class="btn-primary" on:click={retryAR}>Retry</button>
-          <a href="/home/{$page.params.id}/room/{$page.params.roomId}/walkthrough" class="btn-secondary">
-            🚶 Walkthrough Mode
-          </a>
-        </div>
+    {:else if arState === 'permission-denied'}
+      <div class="overlay">
+        <span class="big-icon">🔒</span>
+        <h2>Camera Access Needed</h2>
+        <p>{errorMessage}</p>
+        <button class="btn" on:click={retry}>Try Again</button>
       </div>
 
     {:else if arState === 'scanning'}
-      <div class="ar-hint">
-        <div class="scanning-indicator">
-          <span class="pulse-ring"></span>
-          <span class="scan-icon">📐</span>
-        </div>
-        <p>Move phone slowly to detect a flat surface...</p>
+      <div class="scan-hint">
+        <span class="pulse"></span>
+        <p>Move phone slowly to find a flat surface...</p>
       </div>
 
     {:else if arState === 'viewing'}
-      <div class="ar-viewing-hint">
-        <p>Walk around to see your room from different angles</p>
+      <div class="view-hint">
+        <p>Room placed! Walk around to explore.</p>
       </div>
 
     {:else if arState === 'ended'}
-      <div class="ar-state-overlay">
-        <span class="state-icon">👋</span>
-        <h2>AR Session Ended</h2>
-        <button class="btn-primary" on:click={retryAR}>Start Again</button>
+      <div class="overlay">
+        <span class="big-icon">👋</span>
+        <h2>AR Ended</h2>
+        <button class="btn" on:click={retry}>Start Again</button>
       </div>
     {/if}
   </div>
 
-  <!-- AR Overlay for DOM overlay mode -->
-  <div id="ar-overlay" style="display: none;"></div>
-
-  <!-- Bottom controls -->
-  {#if arState === 'scanning' || arState === 'viewing'}
-    <div class="ar-controls">
-      {#if arState === 'scanning'}
-        <div class="surface-status">
-          <span class="status-dot" class:found={reticle?.visible}></span>
-          {reticle?.visible ? 'Surface detected! Tap to place room.' : 'Scanning for surface...'}
-        </div>
-      {/if}
-
-      {#if arState === 'viewing'}
-        <div class="opacity-control">
-          <label for="opacity-slider">Opacity</label>
-          <input
-            id="opacity-slider"
-            type="range"
-            min="0.1"
-            max="1"
-            step="0.05"
-            value={opacity}
-            on:input={(e) => updateOpacity(parseFloat(e.target.value))}
-          />
-          <span>{Math.round(opacity * 100)}%</span>
-        </div>
-      {/if}
-
-      <div class="ar-actions">
-        <button class="ar-btn" on:click={takeScreenshot} aria-label="Take screenshot">
-          📸 Screenshot
-        </button>
-        <button class="ar-btn" on:click={() => arSession?.end()} aria-label="Exit AR">
-          ✕ Exit
-        </button>
-      </div>
+  {#if arState === 'viewing'}
+    <div class="controls">
+      <label>Opacity</label>
+      <input type="range" min="0.1" max="1" step="0.05" value={opacity} on:input={(e) => updateOpacity(parseFloat(e.target.value))} />
+      <button class="exit" on:click={() => arSession?.end()}>✕</button>
     </div>
   {/if}
 
-  <!-- Screenshot preview -->
-  {#if showScreenshot && screenshotData}
-    <div class="screenshot-overlay" on:click={() => showScreenshot = false}>
-      <div class="screenshot-card" on:click|stopPropagation>
-        <img src={screenshotData} alt="AR Screenshot" />
-        <div class="screenshot-actions">
-          <button class="btn-secondary" on:click={() => showScreenshot = false}>Close</button>
-          <button class="btn-primary" on:click={downloadScreenshot}>💾 Save</button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <a href="/home/{$page.params.id}/room/{$page.params.roomId}" class="back-btn">←</a>
 </div>
 
 <style>
@@ -462,14 +335,7 @@
     inset: 0;
   }
 
-  .ar-viewport :global(canvas) {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
-  /* State overlays */
-  .ar-state-overlay {
+  .overlay {
     position: absolute;
     inset: 0;
     display: flex;
@@ -479,269 +345,148 @@
     gap: 0.75rem;
     padding: 2rem;
     text-align: center;
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
+    background: #1a1a1a;
+    color: #fff;
     z-index: 10;
   }
 
-  .ar-state-overlay.error {
-    background: rgba(30, 10, 10, 0.9);
-  }
-
-  .state-icon {
+  .big-icon {
     font-size: 3rem;
-    margin-bottom: 0.5rem;
   }
 
-  .ar-state-overlay h2 {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
+  .overlay h2 {
+    font-size: 1.3rem;
   }
 
-  .ar-state-overlay p {
-    color: #ccc;
-    max-width: 320px;
-    line-height: 1.5;
+  .overlay p {
+    color: #aaa;
     font-size: 0.9rem;
   }
 
-  .state-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1rem;
-    width: 100%;
-    max-width: 280px;
-  }
-
   .spinner {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border: 3px solid rgba(255,255,255,0.2);
-    border-top-color: white;
+    border-top-color: #fff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Scanning hint */
-  .ar-hint {
+  .btn {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    background: #1E3D1E;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+  }
+
+  .btn-link {
+    color: #888;
+    text-decoration: underline;
+    font-size: 0.8rem;
+  }
+
+  .scan-hint {
     position: absolute;
-    bottom: 140px;
+    bottom: 120px;
     left: 0;
     right: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     z-index: 10;
-    pointer-events: none;
   }
 
-  .scanning-indicator {
-    position: relative;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .pulse-ring {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    border: 2px solid rgba(255,255,255,0.8);
+  .pulse {
+    width: 50px;
+    height: 50px;
+    border: 3px solid #4A8C3F;
     border-radius: 50%;
-    animation: pulse 1.5s ease-out infinite;
-  }
-
-  .scan-icon {
-    font-size: 1.5rem;
-    z-index: 1;
+    animation: pulse 1.5s infinite;
   }
 
   @keyframes pulse {
     0% { transform: scale(0.8); opacity: 1; }
-    100% { transform: scale(1.5); opacity: 0; }
+    100% { transform: scale(1.4); opacity: 0; }
   }
 
-  .ar-hint p {
-    color: white;
+  .scan-hint p {
+    color: #fff;
     background: rgba(0,0,0,0.6);
-    padding: 0.5rem 1.25rem;
+    padding: 0.5rem 1rem;
     border-radius: 20px;
     font-size: 0.85rem;
-    backdrop-filter: blur(10px);
   }
 
-  /* Viewing hint */
-  .ar-viewing-hint {
+  .view-hint {
     position: absolute;
     top: 1rem;
     left: 0;
     right: 0;
     text-align: center;
     z-index: 10;
-    pointer-events: none;
   }
 
-  .ar-viewing-hint p {
+  .view-hint p {
     display: inline-block;
-    color: white;
+    color: #fff;
     background: rgba(0,0,0,0.5);
     padding: 0.4rem 1rem;
     border-radius: 20px;
     font-size: 0.8rem;
-    backdrop-filter: blur(10px);
   }
 
-  /* Controls */
-  .ar-controls {
+  .controls {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(transparent, rgba(0,0,0,0.7));
     z-index: 10;
   }
 
-  .surface-status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: white;
-    font-size: 0.85rem;
-    margin-bottom: 0.75rem;
-    justify-content: center;
-  }
-
-  .status-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #ff4444;
-    transition: background 0.3s;
-  }
-
-  .status-dot.found {
-    background: #44ff44;
-    box-shadow: 0 0 8px #44ff44;
-  }
-
-  .opacity-control {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    color: white;
-    margin-bottom: 0.75rem;
-    padding: 0 0.5rem;
-  }
-
-  .opacity-control label {
+  .controls label {
+    color: #fff;
     font-size: 0.8rem;
-    white-space: nowrap;
   }
 
-  .opacity-control input {
+  .controls input {
     flex: 1;
-    accent-color: var(--green-500);
   }
 
-  .opacity-control span {
-    font-size: 0.8rem;
-    min-width: 35px;
-    text-align: right;
+  .exit {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 1.1rem;
   }
 
-  .ar-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: center;
-  }
-
-  .ar-btn {
-    padding: 0.75rem 1.5rem;
-    border-radius: 25px;
-    background: rgba(255,255,255,0.15);
-    color: white;
-    font-weight: 600;
-    font-size: 0.9rem;
-    backdrop-filter: blur(10px);
-    transition: background 0.2s;
-  }
-
-  .ar-btn:hover, .ar-btn:active {
-    background: rgba(255,255,255,0.25);
-  }
-
-  .btn-primary, .btn-secondary {
-    display: block;
-    width: 100%;
-    padding: 0.875rem;
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    text-align: center;
-    text-decoration: none;
-    font-size: 0.95rem;
-  }
-
-  .btn-primary {
-    background: var(--green-700);
-    color: white;
-  }
-
-  .btn-secondary {
-    background: rgba(255,255,255,0.15);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-  }
-
-  /* Screenshot overlay */
-  .screenshot-overlay {
+  .back-btn {
     position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.8);
+    top: 1rem;
+    left: 1rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
-    padding: 1rem;
-  }
-
-  .screenshot-card {
-    background: white;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    max-width: 400px;
-    width: 100%;
-    box-shadow: var(--shadow-lg);
-  }
-
-  .screenshot-card img {
-    width: 100%;
-    display: block;
-  }
-
-  .screenshot-actions {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem;
-    justify-content: flex-end;
-  }
-
-  .screenshot-actions .btn-primary,
-  .screenshot-actions .btn-secondary {
-    width: auto;
-    padding: 0.6rem 1.25rem;
-    font-size: 0.85rem;
-  }
-
-  .screenshot-actions .btn-secondary {
-    background: var(--grey-100);
-    color: var(--charcoal);
-    border: none;
+    text-decoration: none;
+    z-index: 20;
   }
 </style>

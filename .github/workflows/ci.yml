@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI
 
 on:
   push:
@@ -6,14 +6,8 @@ on:
   pull_request:
     branches: [main]
 
-# Add this block
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,14 +16,16 @@ jobs:
         with:
           node-version: '22'
       
-      - name: Install dependencies
+      - name: Install
         run: npm install --legacy-peer-deps
       
       - name: Build
         run: npm run build
       
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
+      - name: Check output
+        run: |
+          if [ ! -d "build" ]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+          echo "✅ Build successful"

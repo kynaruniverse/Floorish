@@ -7,13 +7,16 @@ export default {
       assets: 'build',
       fallback: 'index.html',
       precompress: false,
-      strict: true
+      strict: false
     }),
     alias: {
       $lib: 'src/lib',
       $components: 'src/lib/components',
       $stores: 'src/lib/stores',
       $utils: 'src/lib/utils'
+    },
+    prerender: {
+      entries: []
     }
   }
 };
