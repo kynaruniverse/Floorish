@@ -6,11 +6,13 @@
   import { toast } from '$lib/stores/app.js';
   import { roomTemplates, getTemplate } from '$lib/data/roomTemplates.js';
   import Modal from '$lib/components/Modal.svelte';
+  import Room3D from '$lib/Room3D.svelte';
 
   let home = null;
   let loading = true;
   let activeFloorId = null;
   let selectedRoom = null;
+  let viewMode = '2d'; // '2d' | '3d'
 
   // Modal states
   let showAddRoomModal = false;
@@ -219,17 +221,26 @@
       <h1>{home.name}</h1>
       
       <div class="header-actions">
-        <button on:click={undo} aria-label="Undo">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <polyline points="1 4 1 10 7 10" />
-            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-          </svg>
-        </button>
-        <button on:click={redo} aria-label="Redo">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
-          </svg>
+        {#if viewMode === '2d'}
+          <button on:click={undo} aria-label="Undo">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            </svg>
+          </button>
+          <button on:click={redo} aria-label="Redo">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+            </svg>
+          </button>
+        {/if}
+        <button
+          class="view-toggle"
+          on:click={() => viewMode = viewMode === '2d' ? '3d' : '2d'}
+          aria-label="Toggle 2D/3D view"
+        >
+          {viewMode === '2d' ? '3D' : '2D'}
         </button>
       </div>
     </header>
@@ -252,42 +263,57 @@
     </div>
 
     <!-- Floor plan canvas -->
-    <div
-      class="plan-canvas"
-      on:pointermove={onDrag}
-      on:pointerup={endDrag}
-      on:pointerleave={endDrag}
-    >
-      {#if rooms.length === 0}
-        <div class="plan-empty">
-          <p>No rooms on this floor yet</p>
-          <button class="btn btn-primary btn-sm" on:click={openAddRoom}>
-            Add First Room
-          </button>
-        </div>
-      {:else}
-        {#each rooms as room}
-          <div
-            class="room-block"
-            style="
-              left: {room.position?.x || 0}px;
-              top: {room.position?.y || 0}px;
-              width: {roomWidth(room)}px;
-              height: {roomDepth(room)}px;
-              background: {room.color};
-            "
-            on:click={() => openRoom(room)}
-            on:pointerdown={(e) => startDrag(room, e)}
-            role="button"
-            tabindex="0"
-            aria-label="{room.name}"
-          >
-            <span class="room-name">{room.name}</span>
-            <span class="room-size">{room.dimensions.width}m × {room.dimensions.depth}m</span>
+    {#if viewMode === '2d'}
+      <div
+        class="plan-canvas"
+        on:pointermove={onDrag}
+        on:pointerup={endDrag}
+        on:pointerleave={endDrag}
+      >
+        {#if rooms.length === 0}
+          <div class="plan-empty">
+            <p>No rooms on this floor yet</p>
+            <button class="btn btn-primary btn-sm" on:click={openAddRoom}>
+              Add First Room
+            </button>
           </div>
-        {/each}
-      {/if}
-    </div>
+        {:else}
+          {#each rooms as room}
+            <div
+              class="room-block"
+              style="
+                left: {room.position?.x || 0}px;
+                top: {room.position?.y || 0}px;
+                width: {roomWidth(room)}px;
+                height: {roomDepth(room)}px;
+                background: {room.color};
+              "
+              on:click={() => openRoom(room)}
+              on:pointerdown={(e) => startDrag(room, e)}
+              role="button"
+              tabindex="0"
+              aria-label="{room.name}"
+            >
+              <span class="room-name">{room.name}</span>
+              <span class="room-size">{room.dimensions.width}m × {room.dimensions.depth}m</span>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    {:else}
+      <div class="plan-canvas plan-canvas-3d">
+        {#if rooms.length === 0}
+          <div class="plan-empty">
+            <p>No rooms on this floor yet</p>
+            <button class="btn btn-primary btn-sm" on:click={openAddRoom}>
+              Add First Room
+            </button>
+          </div>
+        {:else}
+          <Room3D {rooms} selectedRoomId={editingRoom?.id ?? null} />
+        {/if}
+      </div>
+    {/if}
 
     <!-- Add room button -->
     <button class="add-room-btn" on:click={openAddRoom}>
@@ -412,6 +438,16 @@
     box-shadow: var(--shadow-sm);
   }
 
+  .view-toggle {
+    width: auto !important;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-full) !important;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: #fff !important;
+    background: var(--primary) !important;
+  }
+
   /* Floor tabs */
   .floor-tabs {
     display: flex;
@@ -461,6 +497,10 @@
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
+  }
+
+  .plan-canvas-3d {
+    padding: 0;
   }
 
   .plan-empty {
