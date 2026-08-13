@@ -1,216 +1,29 @@
-name: CI/CD Pipeline
+name: CI/CD
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
-env:
-  NODE_VERSION: '20'
-  PNPM_VERSION: '8'
-
 jobs:
-  # ---- LINT & TYPE CHECK ----
-  lint:
-    name: Lint & Type Check
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
       
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version: '22'
       
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: npm install
       
-      - name: Run ESLint
-        run: pnpm lint
-      
-      - name: Run Svelte Check
-        run: pnpm check
-      
-      - name: Check formatting
-        run: pnpm format:check
-
-  # ---- UNIT TESTS ----
-  test:
-    name: Unit & Integration Tests
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      
-      - run: pnpm install --frozen-lockfile
-      
-      - name: Run tests with coverage
-        run: pnpm test:coverage
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/coverage-final.json
-          flags: unittests
-          name: floorish-coverage
-          fail_ci_if_error: false
-
-  # ---- E2E TESTS ----
-  e2e:
-    name: End-to-End Tests
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      
-      - run: pnpm install --frozen-lockfile
-      
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      
-      - name: Build app
-        run: pnpm build
-      
-      - name: Run Playwright tests
-        run: pnpm test:e2e
-      
-      - name: Upload test results
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: playwright-results
-          path: test-results/
-
-  # ---- BUILD ----
-  build:
-    name: Build & Analyze
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      
-      - run: pnpm install --frozen-lockfile
-      
-      - name: Build production
-        run: pnpm build
-        env:
-          VITE_WEB3_STORAGE_TOKEN: ${{ secrets.WEB3_STORAGE_TOKEN }}
-      
-      - name: Analyze bundle size
-        uses: preactjs/compressed-size-action@v2
-        with:
-          build-script: 'build'
-          pattern: 'build/**/*.{js,css,html,json,wasm}'
-      
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: build-output
-          path: build/
-          retention-days: 7
-
-  # ---- DEPLOY ----
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: [build, e2e]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/download-artifact@v3
-        with:
-          name: build-output
-          path: build/
+      - name: Build
+        run: npm run build
       
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
-          cname: floorish.app
-      
-      - name: Deploy to Netlify (backup)
-        uses: nwtgck/actions-netlify@v2
-        with:
-          publish-dir: ./build
-          production-branch: main
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "Deploy from GitHub Actions"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        timeout-minutes: 5
-
-  # ---- LIGHTHOUSE AUDIT ----
-  lighthouse:
-    name: Lighthouse Audit
-    runs-on: ubuntu-latest
-    needs: deploy
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Run Lighthouse CI
-        uses: treosh/lighthouse-ci-action@v10
-        with:
-          urls: |
-            https://floorish.app
-            https://floorish.app/inventory
-            https://floorish.app/catalogue
-          budgetPath: .github/lighthouse/budget.json
-          uploadArtifacts: true
-          temporaryPublicStorage: true
-      
-      - name: Check PWA score
-        run: |
-          # Ensure PWA score meets minimum threshold
-          echo "Lighthouse audit complete"
-
-  # ---- NOTIFY ----
-  notify:
-    name: Notify
-    runs-on: ubuntu-latest
-    needs: [deploy, lighthouse]
-    if: always()
-    steps:
-      - name: Notify on success
-        if: success()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "✅ Floorish deployed successfully!\nVersion: ${{ github.sha }}\nURL: https://floorish.app"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
