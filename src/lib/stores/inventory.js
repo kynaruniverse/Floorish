@@ -1,8 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { openDB } from 'idb';
-
-const DB_NAME = 'floorish-db';
-const DB_VERSION = 2; // Matches homes store
+import { getDB } from './db.js';
 
 // Categories
 export const CATEGORIES = [
@@ -43,17 +40,9 @@ function guessCategory(name) {
   return 'Other';
 }
 
-async function getDB() {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains('inventory')) {
-        const inventoryStore = db.createObjectStore('inventory', { keyPath: 'id' });
-        inventoryStore.createIndex('category', 'category');
-        inventoryStore.createIndex('createdAt', 'createdAt');
-      }
-    }
-  });
-}
+// Shared IndexedDB connection lives in ./db.js — creates both the
+// 'homes' and 'inventory' object stores in a single upgrade, avoiding
+// the version-mismatch bug this file used to have with homes.js.
 
 function createInventoryStore() {
   const { subscribe, set, update } = writable([]);
@@ -219,7 +208,7 @@ function createInventoryStore() {
       const db = await getDB();
       const items = await db.getAll('inventory');
       return JSON.stringify({
-        version: DB_VERSION,
+        version: 1,
         exportedAt: new Date().toISOString(),
         items
       }, null, 2);

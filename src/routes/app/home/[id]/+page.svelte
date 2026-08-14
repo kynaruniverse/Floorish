@@ -52,8 +52,15 @@
 
   onMount(async () => {
     const homeId = $page.params.id;
-    
+
     try {
+      // Ensure the reactive homes store is populated before any mutation
+      // (addRoom, addFurniture, etc.) runs — those operate on the store's
+      // in-memory array, not on the direct get() below. Without this,
+      // landing here directly (refresh, deep link, reopening the PWA)
+      // leaves the store empty and the first edit would wipe all homes.
+      await homes.load();
+
       home = await homes.get(homeId);
       
       if (!home) {

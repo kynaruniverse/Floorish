@@ -1,24 +1,30 @@
 import { writable, derived } from 'svelte/store';
-import { openDB } from 'idb';
 import { browser } from '$app/environment';
-
-const DB_NAME = 'floorish-db';
-const DB_VERSION = 1;
+import { getDB } from './db.js';
 
 // ID generator that works everywhere
 function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 10)}`;
 }
 
-async function getDB() {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains('homes')) {
-        const store = db.createObjectStore('homes', { keyPath: 'id' });
-        store.createIndex('updatedAt', 'updatedAt');
-      }
-    }
-  });
+// Fills in any missing arrays on a home record so older/partially-written
+// records (e.g. from a previous version of the app, or an interrupted
+// write) can't crash the UI. Self-healing rather than throwing.
+function normalizeHome(home) {
+  if (!home) return home;
+  return {
+    ...home,
+    floors: (home.floors || []).map(f => ({
+      ...f,
+      rooms: (f.rooms || []).map(r => ({
+        ...r,
+        walls: r.walls || [],
+        doors: r.doors || [],
+        windows: r.windows || [],
+        furniture: r.furniture || []
+      }))
+    }))
+  };
 }
 
 // ============ UNDO/REDO ============
@@ -29,15 +35,15 @@ let isRestoring = false;
 
 function pushHistory(snapshot) {
   if (isRestoring) return;
-  
+
   // Truncate forward history
   history = history.slice(0, historyIndex + 1);
   history.push(JSON.stringify(snapshot));
-  
+
   if (history.length > MAX_HISTORY) {
     history.shift();
   }
-  
+
   historyIndex = history.length - 1;
 }
 
@@ -45,19 +51,34 @@ function pushHistory(snapshot) {
 function createHomesStore() {
   const { subscribe, set, update } = writable([]);
 
-  function snapshot(homes) {
-    return JSON.parse(JSON.stringify(homes));
-  }
-
-  async function persist(homes) {
+  async function persist(homesList) {
     if (!browser) return;
     const db = await getDB();
     const tx = db.transaction('homes', 'readwrite');
     await tx.store.clear();
-    for (const home of homes) {
+    for (const home of homesList) {
       await tx.store.put(home);
     }
     await tx.done;
+  }
+
+  // Applies an update() and returns the resulting array, so callers can
+  // await persist(updated) AFTER the synchronous store update completes —
+  // never inside it. Firing persist() from inside update() without
+  // awaiting let concurrent mutations race each other's clear+rewrite
+  // cycles, which could leave a home record partially written (e.g.
+  // missing `floors`, matching the "Cannot read properties of undefined
+  // (reading 'map')" crash). Every mutator now awaits persist() before
+  // resolving, so calls from the UI (which are always awaited) run
+  // strictly one at a time.
+  function applyUpdate(fn) {
+    let result;
+    update(homes => {
+      result = fn(homes);
+      pushHistory(result);
+      return result;
+    });
+    return result;
   }
 
   return {
@@ -67,8 +88,8 @@ function createHomesStore() {
     async load() {
       try {
         const db = await getDB();
-        const homes = await db.getAll('homes');
-        const sorted = homes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        const raw = await db.getAll('homes');
+        const sorted = raw.map(normalizeHome).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
         set(sorted);
         pushHistory(sorted);
         return sorted;
@@ -82,7 +103,8 @@ function createHomesStore() {
     // ============ GET ============
     async get(id) {
       const db = await getDB();
-      return await db.get('homes', id);
+      const home = await db.get('homes', id);
+      return normalizeHome(home);
     },
 
     // ============ CREATE HOME ============
@@ -102,12 +124,8 @@ function createHomesStore() {
         ]
       };
 
-      update(homes => {
-        const updated = [newHome, ...homes];
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+      const updated = applyUpdate(homes => [newHome, ...homes]);
+      await persist(updated);
 
       return newHome;
     },
@@ -115,39 +133,33 @@ function createHomesStore() {
     // ============ UPDATE HOME ============
     async updateHome(id, changes) {
       let updatedHome = null;
-      
-      update(homes => {
-        const updated = homes.map(h => {
+
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === id) {
             updatedHome = { ...h, ...changes, updatedAt: Date.now() };
             return updatedHome;
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
 
       return updatedHome;
     },
 
     // ============ DELETE HOME ============
     async removeHome(id) {
-      update(homes => {
-        const updated = homes.filter(h => h.id !== id);
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+      const updated = applyUpdate(homes => homes.filter(h => h.id !== id));
+      await persist(updated);
     },
 
     // ============ FLOORS ============
     async addFloor(homeId, name) {
       let newFloor = null;
-      
-      update(homes => {
-        const updated = homes.map(h => {
+
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             newFloor = {
               id: generateId(),
@@ -158,18 +170,16 @@ function createHomesStore() {
             return { ...h, floors: [...h.floors, newFloor], updatedAt: Date.now() };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
 
       return newFloor;
     },
 
     async removeFloor(homeId, floorId) {
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
@@ -178,11 +188,9 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
     },
 
     // ============ ROOMS ============
@@ -204,14 +212,14 @@ function createHomesStore() {
         updatedAt: Date.now()
       };
 
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
-                  return { ...f, rooms: [...f.rooms, newRoom] };
+                  return { ...f, rooms: [...(f.rooms || []), newRoom] };
                 }
                 return f;
               }),
@@ -219,26 +227,24 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
 
       return newRoom;
     },
 
     async updateRoom(homeId, floorId, roomId, changes) {
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
                   return {
                     ...f,
-                    rooms: f.rooms.map(r => {
+                    rooms: (f.rooms || []).map(r => {
                       if (r.id === roomId) {
                         return { ...r, ...changes, updatedAt: Date.now() };
                       }
@@ -252,22 +258,20 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
     },
 
     async removeRoom(homeId, floorId, roomId) {
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
-                  return { ...f, rooms: f.rooms.filter(r => r.id !== roomId) };
+                  return { ...f, rooms: (f.rooms || []).filter(r => r.id !== roomId) };
                 }
                 return f;
               }),
@@ -275,11 +279,9 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
     },
 
     // ============ FURNITURE ============
@@ -297,16 +299,16 @@ function createHomesStore() {
         createdAt: Date.now()
       };
 
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
                   return {
                     ...f,
-                    rooms: f.rooms.map(r => {
+                    rooms: (f.rooms || []).map(r => {
                       if (r.id === roomId) {
                         return { ...r, furniture: [...(r.furniture || []), newItem] };
                       }
@@ -320,26 +322,24 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
 
       return newItem;
     },
 
     async updateFurniture(homeId, floorId, roomId, furnitureId, changes) {
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
                   return {
                     ...f,
-                    rooms: f.rooms.map(r => {
+                    rooms: (f.rooms || []).map(r => {
                       if (r.id === roomId) {
                         return {
                           ...r,
@@ -358,24 +358,22 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
     },
 
     async removeFurniture(homeId, floorId, roomId, furnitureId) {
-      update(homes => {
-        const updated = homes.map(h => {
+      const updated = applyUpdate(homes =>
+        homes.map(h => {
           if (h.id === homeId) {
             return {
               ...h,
-              floors: h.floors.map(f => {
+              floors: (h.floors || []).map(f => {
                 if (f.id === floorId) {
                   return {
                     ...f,
-                    rooms: f.rooms.map(r => {
+                    rooms: (f.rooms || []).map(r => {
                       if (r.id === roomId) {
                         return {
                           ...r,
@@ -392,37 +390,35 @@ function createHomesStore() {
             };
           }
           return h;
-        });
-        persist(updated);
-        pushHistory(updated);
-        return updated;
-      });
+        })
+      );
+      await persist(updated);
     },
 
     // ============ UNDO / REDO ============
     async undo() {
       if (historyIndex <= 0) return false;
-      
+
       isRestoring = true;
       historyIndex--;
       const prev = JSON.parse(history[historyIndex]);
       set(prev);
       await persist(prev);
       isRestoring = false;
-      
+
       return true;
     },
 
     async redo() {
       if (historyIndex >= history.length - 1) return false;
-      
+
       isRestoring = true;
       historyIndex++;
       const next = JSON.parse(history[historyIndex]);
       set(next);
       await persist(next);
       isRestoring = false;
-      
+
       return true;
     },
 
@@ -437,11 +433,11 @@ function createHomesStore() {
     // ============ EXPORT ============
     async exportData() {
       const db = await getDB();
-      const homes = await db.getAll('homes');
+      const raw = await db.getAll('homes');
       return JSON.stringify({
         version: 1,
         exportedAt: new Date().toISOString(),
-        homes
+        homes: raw
       }, null, 2);
     },
 
@@ -450,10 +446,10 @@ function createHomesStore() {
       if (!data.homes || !Array.isArray(data.homes)) {
         throw new Error('Invalid data');
       }
-      
+
       const db = await getDB();
       for (const home of data.homes) {
-        await db.put('homes', home);
+        await db.put('homes', normalizeHome(home));
       }
       await this.load();
     },
@@ -474,6 +470,6 @@ export const homes = createHomesStore();
 // Derived: total rooms
 export const totalRooms = derived(homes, $homes =>
   $homes.reduce((total, home) =>
-    total + home.floors.reduce((floorTotal, floor) =>
-      floorTotal + floor.rooms.length, 0), 0)
+    total + (home.floors || []).reduce((floorTotal, floor) =>
+      floorTotal + (floor.rooms || []).length, 0), 0)
 );
