@@ -209,6 +209,14 @@
     }
   }
 
+  async function redo() {
+    const done = await homes.redo();
+    if (done) {
+      home = await homes.get(home.id);
+      toast.info('Redone');
+    }
+  }
+
   // ============ 3D FURNITURE ============
   function handle3DSelectRoom(e) {
     active3DRoomId = e.detail.roomId;
