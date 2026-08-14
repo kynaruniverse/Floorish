@@ -282,6 +282,123 @@ function createHomesStore() {
       });
     },
 
+    // ============ FURNITURE ============
+    async addFurniture(homeId, floorId, roomId, furnitureData = {}) {
+      const newItem = {
+        id: generateId(),
+        refId: furnitureData.refId || null,
+        name: furnitureData.name || 'Item',
+        shape: furnitureData.shape || 'box',
+        category: furnitureData.category || 'Other',
+        dimensions: furnitureData.dimensions || { width: 0.6, height: 0.6, depth: 0.6 },
+        color: furnitureData.color || '#A89A82',
+        position: furnitureData.position || { x: 0, z: 0 },
+        rotationY: furnitureData.rotationY || 0,
+        createdAt: Date.now()
+      };
+
+      update(homes => {
+        const updated = homes.map(h => {
+          if (h.id === homeId) {
+            return {
+              ...h,
+              floors: h.floors.map(f => {
+                if (f.id === floorId) {
+                  return {
+                    ...f,
+                    rooms: f.rooms.map(r => {
+                      if (r.id === roomId) {
+                        return { ...r, furniture: [...(r.furniture || []), newItem] };
+                      }
+                      return r;
+                    })
+                  };
+                }
+                return f;
+              }),
+              updatedAt: Date.now()
+            };
+          }
+          return h;
+        });
+        persist(updated);
+        pushHistory(updated);
+        return updated;
+      });
+
+      return newItem;
+    },
+
+    async updateFurniture(homeId, floorId, roomId, furnitureId, changes) {
+      update(homes => {
+        const updated = homes.map(h => {
+          if (h.id === homeId) {
+            return {
+              ...h,
+              floors: h.floors.map(f => {
+                if (f.id === floorId) {
+                  return {
+                    ...f,
+                    rooms: f.rooms.map(r => {
+                      if (r.id === roomId) {
+                        return {
+                          ...r,
+                          furniture: (r.furniture || []).map(item =>
+                            item.id === furnitureId ? { ...item, ...changes } : item
+                          )
+                        };
+                      }
+                      return r;
+                    })
+                  };
+                }
+                return f;
+              }),
+              updatedAt: Date.now()
+            };
+          }
+          return h;
+        });
+        persist(updated);
+        pushHistory(updated);
+        return updated;
+      });
+    },
+
+    async removeFurniture(homeId, floorId, roomId, furnitureId) {
+      update(homes => {
+        const updated = homes.map(h => {
+          if (h.id === homeId) {
+            return {
+              ...h,
+              floors: h.floors.map(f => {
+                if (f.id === floorId) {
+                  return {
+                    ...f,
+                    rooms: f.rooms.map(r => {
+                      if (r.id === roomId) {
+                        return {
+                          ...r,
+                          furniture: (r.furniture || []).filter(item => item.id !== furnitureId)
+                        };
+                      }
+                      return r;
+                    })
+                  };
+                }
+                return f;
+              }),
+              updatedAt: Date.now()
+            };
+          }
+          return h;
+        });
+        persist(updated);
+        pushHistory(updated);
+        return updated;
+      });
+    },
+
     // ============ UNDO / REDO ============
     async undo() {
       if (historyIndex <= 0) return false;
