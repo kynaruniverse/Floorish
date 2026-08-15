@@ -166,12 +166,13 @@ function createInventoryStore() {
       return this.add({
         name: `${item.name} (Copy)`,
         category: item.category,
-        dimensions: { ...item.dimensions },
+        dimensions: { ...(item.dimensions || {}) },
         modelData: item.modelData,
         thumbnail: item.thumbnail,
-        colourVariants: [...item.colourVariants],
+        colourVariants: [...(item.colourVariants || [])],
         material: item.material,
-        tags: [...item.tags]
+        notes: item.notes,
+        tags: [...(item.tags || [])]
       });
     },
 
@@ -225,7 +226,10 @@ function createInventoryStore() {
         for (const item of data.items) {
           await db.put('inventory', {
             ...item,
-            id: item.id || generateId()
+            id: item.id || generateId(),
+            dimensions: item.dimensions || { width: 1, height: 1, depth: 1 },
+            colourVariants: item.colourVariants || [],
+            tags: item.tags || []
           });
         }
         

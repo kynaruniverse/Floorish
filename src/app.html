@@ -6,6 +6,7 @@
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#1E3D1E" />
@@ -27,24 +28,5 @@
   </head>
   <body>
     <div style="display: contents">%sveltekit.body%</div>
-
-    <!-- TEMP DEBUG — remove this script block once 3D/furniture testing is done.
-         Shows JS errors on-screen since mobile browsers have no visible console. -->
-    <div id="debug-overlay" style="display:none; position:fixed; bottom:0; left:0; right:0; max-height:40vh; overflow:auto; background:rgba(20,0,0,0.92); color:#ffb3b3; font:11px/1.4 monospace; padding:10px; z-index:99999; white-space:pre-wrap;"></div>
-    <script>
-      (function () {
-        var box = document.getElementById('debug-overlay');
-        function show(msg) {
-          box.style.display = 'block';
-          box.textContent += msg + '\n\n';
-        }
-        window.addEventListener('error', function (e) {
-          show('ERROR: ' + e.message + '\n  at ' + e.filename + ':' + e.lineno + ':' + e.colno);
-        });
-        window.addEventListener('unhandledrejection', function (e) {
-          show('UNHANDLED PROMISE REJECTION: ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason));
-        });
-      })();
-    </script>
   </body>
 </html>

@@ -189,6 +189,7 @@
     const room = rooms.find(r => r.id === dragging.room.id);
     if (room) {
       room.position = { x, y };
+      home = home; // force Svelte to re-render the moved room block
     }
   }
 
@@ -199,8 +200,8 @@
     if (room) {
       homes.updateRoom(home.id, activeFloorId, room.id, {
         position: room.position
-      }).then(() => {
-        home = homes.get(home.id);
+      }).then(async () => {
+        home = await homes.get(home.id);
       });
     }
     
@@ -403,6 +404,7 @@
               "
               on:click={() => openRoom(room)}
               on:pointerdown={(e) => startDrag(room, e)}
+              on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openRoom(room))}
               role="button"
               tabindex="0"
               aria-label="{room.name}"
@@ -503,8 +505,8 @@
   </div>
 
   <div class="template-form">
-    <label class="form-label">Room name</label>
-    <input class="input" type="text" bind:value={roomForm.name} />
+    <label class="form-label" for="add-room-name">Room name</label>
+    <input id="add-room-name" class="input" type="text" bind:value={roomForm.name} />
   </div>
 
   <div class="form-actions">
@@ -516,17 +518,17 @@
 <!-- Edit Room Modal -->
 <Modal open={showRoomModal} title="Edit Room" on:close={() => showRoomModal = false}>
   <div class="room-form">
-    <label class="form-label">Room name</label>
-    <input class="input" type="text" bind:value={roomForm.name} />
+    <label class="form-label" for="edit-room-name">Room name</label>
+    <input id="edit-room-name" class="input" type="text" bind:value={roomForm.name} />
 
-    <label class="form-label">Width (m)</label>
-    <input class="input" type="number" bind:value={roomForm.width} min="1" max="20" step="0.5" />
+    <label class="form-label" for="edit-room-width">Width (m)</label>
+    <input id="edit-room-width" class="input" type="number" bind:value={roomForm.width} min="1" max="20" step="0.5" />
 
-    <label class="form-label">Depth (m)</label>
-    <input class="input" type="number" bind:value={roomForm.depth} min="1" max="20" step="0.5" />
+    <label class="form-label" for="edit-room-depth">Depth (m)</label>
+    <input id="edit-room-depth" class="input" type="number" bind:value={roomForm.depth} min="1" max="20" step="0.5" />
 
-    <label class="form-label">Floor type</label>
-    <select class="input" bind:value={roomForm.floorType}>
+    <label class="form-label" for="edit-room-floortype">Floor type</label>
+    <select id="edit-room-floortype" class="input" bind:value={roomForm.floorType}>
       <option value="wood">Wood</option>
       <option value="carpet">Carpet</option>
       <option value="tile">Tile</option>

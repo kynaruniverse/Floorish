@@ -11,21 +11,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
+
       - name: Install
         run: npm install --legacy-peer-deps
-      
+
+      - name: Type check
+        run: npm run check
+
+      - name: Test
+        run: npm run test:coverage
+
       - name: Build
         run: npm run build
-      
+
       - name: Check output
         run: |
           if [ ! -d "build" ]; then
             echo "❌ Build failed"
+            exit 1
+          fi
+          if [ ! -f "build/manifest.webmanifest" ]; then
+            echo "❌ PWA manifest missing from build output"
+            exit 1
+          fi
+          if [ ! -f "build/sw.js" ]; then
+            echo "❌ Service worker missing from build output"
             exit 1
           fi
           echo "✅ Build successful"

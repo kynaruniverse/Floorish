@@ -4,6 +4,8 @@
   import { homes } from '$lib/stores/homes.js';
   import { toast, isFirstVisit, markVisited } from '$lib/stores/app.js';
   import Modal from '$lib/components/Modal.svelte';
+  import Skeleton from '$lib/components/Skeleton.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   let loading = true;
   let showNewHomeModal = false;
@@ -91,23 +93,20 @@
   </header>
 
   {#if loading}
-    <div class="loading-state">
-      <div class="spinner"></div>
+    <div class="homes-list">
+      <Skeleton variant="card" />
+      <Skeleton variant="card" />
+      <Skeleton variant="card" />
     </div>
 
   {:else if $homes.length === 0}
-    <div class="empty-state">
-      <div class="empty-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        </svg>
-      </div>
-      <h2>Create your first home</h2>
-      <p>Name it, add floors, and start drawing rooms.</p>
-      <button class="btn btn-primary" on:click={() => showNewHomeModal = true}>
-        Create Home
-      </button>
-    </div>
+    <EmptyState
+      icon="🏠"
+      title="Create your first home"
+      description="Name it, add floors, and start drawing rooms."
+      ctaText="Create Home"
+      onCta={() => showNewHomeModal = true}
+    />
 
   {:else}
     <div class="homes-list">
@@ -253,56 +252,6 @@
   }
 
   .add-btn:active { transform: scale(0.92); }
-
-  /* Loading */
-  .loading-state {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-6);
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border);
-    border-top-color: var(--primary);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Empty */
-  .empty-state {
-    text-align: center;
-    padding: var(--space-6) var(--space-4);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .empty-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: var(--primary-light);
-    color: var(--primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--space-2);
-  }
-
-  .empty-state h2 {
-    font-size: var(--text-lg);
-  }
-
-  .empty-state p {
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    max-width: 260px;
-  }
 
   /* Homes list */
   .homes-list {

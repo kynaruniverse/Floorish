@@ -43,7 +43,8 @@ export default defineConfig({
       $lib: path.resolve(__dirname, 'src/lib'),
       $components: path.resolve(__dirname, 'src/lib/components'),
       $stores: path.resolve(__dirname, 'src/lib/stores'),
-      $utils: path.resolve(__dirname, 'src/lib/utils')
+      $utils: path.resolve(__dirname, 'src/lib/utils'),
+      '$app/environment': path.resolve(__dirname, 'tests/mocks/app-environment.js')
     }
   }
 });

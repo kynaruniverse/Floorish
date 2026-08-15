@@ -31,6 +31,8 @@
     transition:fade={{ duration: 150 }}
     role="presentation"
   >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
       class="modal-content"
       role="dialog"

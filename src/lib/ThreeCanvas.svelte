@@ -10,7 +10,9 @@
   export let shadows = true;
   export let antialias = true;
   export let pixelRatio = 2;
+  /** @type {((ctx: any) => void) | null} */
   export let onReady = null;
+  /** @type {((ctx: any) => void) | null} */
   export let onRender = null;
 
   let containerEl;
@@ -151,7 +153,7 @@
     height: 100%;
     position: relative;
     overflow: hidden;
-    background: var(--cream);
+    background: var(--bg);
   }
 
   .three-container :global(canvas) {
@@ -166,14 +168,14 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    color: var(--grey-600);
+    color: var(--text-secondary);
   }
 
   .spinner {
     width: 36px;
     height: 36px;
-    border: 3px solid var(--grey-200);
-    border-top-color: var(--green-700);
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

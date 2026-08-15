@@ -61,7 +61,7 @@ if (browser) {
   // Check if installed
   const isStandalone = 
     window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true;
+    /** @type {any} */ (window.navigator).standalone === true; // iOS Safari-only, non-standard
   isAppInstalled.set(isStandalone);
   
   // Check first visit
