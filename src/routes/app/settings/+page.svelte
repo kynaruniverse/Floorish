@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { homes } from '$lib/stores/homes.js';
+  import { inventory } from '$lib/stores/inventory.js';
   import { toast } from '$lib/stores/app.js';
   import Modal from '$lib/components/Modal.svelte';
 
@@ -28,8 +29,16 @@
   async function exportData() {
     exporting = true;
     try {
-      const data = await homes.exportData();
-      const blob = new Blob([data], { type: 'application/json' });
+      const homesData = JSON.parse(await homes.exportData());
+      const inventoryData = JSON.parse(await inventory.exportData());
+      const combined = JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        homes: homesData.homes,
+        items: inventoryData.items
+      }, null, 2);
+
+      const blob = new Blob([combined], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -51,8 +60,20 @@
 
     try {
       const text = await file.text();
-      await homes.importData(text);
-      toast.success('Data imported');
+      // Both stores read the same JSON string and only look at their own
+      // top-level key (`homes` / `items`), so one combined backup file
+      // can be handed to both without either needing to know about the
+      // other's data.
+      const homesOk = await homes.importData(text);
+      const itemsOk = await inventory.importData(text);
+
+      if (homesOk && itemsOk) {
+        toast.success('Data imported');
+      } else if (homesOk || itemsOk) {
+        toast.info('Partial import — some data could not be restored');
+      } else {
+        toast.error('Import failed: invalid file');
+      }
     } catch (err) {
       toast.error('Import failed: invalid file');
     }
@@ -60,6 +81,7 @@
 
   async function deleteAllData() {
     await homes.resetAll();
+    await inventory.removeAll();
     toast.info('All data deleted');
     showDeleteModal = false;
   }
@@ -122,7 +144,7 @@
 
 <!-- Delete confirmation -->
 <Modal open={showDeleteModal} title="Delete All Data?" on:close={() => showDeleteModal = false}>
-  <p>This permanently removes all homes, floors, and rooms. This cannot be undone.</p>
+  <p>This permanently removes all homes, floors, rooms, and your saved furniture items. This cannot be undone.</p>
   
   <div class="form-actions">
     <button class="btn btn-secondary" on:click={() => showDeleteModal = false}>Cancel</button>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { roomTemplates, getTemplate } from '$lib/data/roomTemplates.js';
-import { furnitureLibrary } from '$lib/data/furnitureLibrary.js';
+import { furnitureLibrary, FURNITURE_SHAPES } from '$lib/data/furnitureLibrary.js';
 
 describe('roomTemplates', () => {
   it('every template has positive width and depth', () => {
@@ -23,10 +23,7 @@ describe('roomTemplates', () => {
 
 describe('furnitureLibrary', () => {
   it('every entry has a shape recognized by Room3D\'s buildFurnitureGroup switch', () => {
-    // Keep this list in sync with the `switch (item.shape)` cases in
-    // src/lib/Room3D.svelte — an unrecognized shape silently falls
-    // through to the generic box, so this guards against silent drift.
-    const knownShapes = ['sofa', 'chair', 'table', 'bed', 'wardrobe', 'lamp', 'plant', 'rug', 'box'];
+    const knownShapes = FURNITURE_SHAPES.map(s => s.value);
     for (const tpl of furnitureLibrary) {
       expect(knownShapes).toContain(tpl.shape);
     }
@@ -37,6 +34,27 @@ describe('furnitureLibrary', () => {
       expect(tpl.dimensions.width).toBeGreaterThan(0);
       expect(tpl.dimensions.height).toBeGreaterThan(0);
       expect(tpl.dimensions.depth).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('FURNITURE_SHAPES', () => {
+  it('covers every shape Room3D.svelte actually renders as a distinct primitive', () => {
+    // Mirrors the `switch (item.shape)` cases in src/lib/Room3D.svelte.
+    // This is the list the FurniturePicker's custom-item form offers —
+    // if Room3D grows a new case, it needs to be added here too, or
+    // users have no way to pick it for a custom item.
+    const room3dCases = ['sofa', 'chair', 'table', 'bed', 'wardrobe', 'lamp', 'plant', 'rug'];
+    const offeredValues = FURNITURE_SHAPES.map(s => s.value);
+    for (const shape of room3dCases) {
+      expect(offeredValues).toContain(shape);
+    }
+  });
+
+  it('every shape has a non-empty label', () => {
+    for (const s of FURNITURE_SHAPES) {
+      expect(s.value).toBeTruthy();
+      expect(s.label).toBeTruthy();
     }
   });
 });

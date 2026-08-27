@@ -3,6 +3,21 @@
 // no external 3D models, so this works fully offline with zero assets.
 // Dimensions in metres: width (x), height (y), depth (z).
 
+// Keep in sync with the `switch (item.shape)` cases in Room3D.svelte.
+// Any shape not in this list still renders (falls through to a plain
+// box), it just won't get its own distinct 3D form.
+export const FURNITURE_SHAPES = [
+  { value: 'sofa', label: 'Sofa' },
+  { value: 'chair', label: 'Chair' },
+  { value: 'table', label: 'Table' },
+  { value: 'bed', label: 'Bed' },
+  { value: 'wardrobe', label: 'Wardrobe / Shelf' },
+  { value: 'lamp', label: 'Lamp' },
+  { value: 'plant', label: 'Plant' },
+  { value: 'rug', label: 'Rug' },
+  { value: 'box', label: 'Other (box)' }
+];
+
 export const furnitureLibrary = [
   {
     shape: 'sofa',

@@ -36,6 +36,28 @@ describe('inventory store', () => {
     expect(item.category).toBe('Decor');
   });
 
+  // shape/color exist so an inventory item can be placed in the 3D view
+  // the same way a furnitureLibrary catalogue item can — Room3D.svelte
+  // reads item.shape (to pick a primitive) and item.color directly.
+  it('defaults shape and color to match Room3D\'s own fallbacks when not provided', async () => {
+    const item = await inventory.add({ name: 'Unspecified Thing' });
+    expect(item.shape).toBe('box');
+    expect(item.color).toBe('#A89A82');
+  });
+
+  it('respects an explicitly provided shape and color', async () => {
+    const item = await inventory.add({ name: 'Custom Sofa', shape: 'sofa', color: '#123456' });
+    expect(item.shape).toBe('sofa');
+    expect(item.color).toBe('#123456');
+  });
+
+  it('carries shape and color through duplicate()', async () => {
+    const item = await inventory.add({ name: 'Blue Chair', shape: 'chair', color: '#0000ff' });
+    const copy = await inventory.duplicate(item.id);
+    expect(copy.shape).toBe('chair');
+    expect(copy.color).toBe('#0000ff');
+  });
+
   it('updates an item without losing its id or createdAt', async () => {
     const item = await inventory.add({ name: 'Rug' });
     const updated = await inventory.update(item.id, { name: 'Persian Rug' });

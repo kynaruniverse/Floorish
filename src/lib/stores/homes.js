@@ -442,16 +442,22 @@ function createHomesStore() {
     },
 
     async importData(jsonString) {
-      const data = JSON.parse(jsonString);
-      if (!data.homes || !Array.isArray(data.homes)) {
-        throw new Error('Invalid data');
-      }
+      try {
+        const data = JSON.parse(jsonString);
+        if (!data.homes || !Array.isArray(data.homes)) {
+          throw new Error('Invalid data');
+        }
 
-      const db = await getDB();
-      for (const home of data.homes) {
-        await db.put('homes', normalizeHome(home));
+        const db = await getDB();
+        for (const home of data.homes) {
+          await db.put('homes', normalizeHome(home));
+        }
+        await this.load();
+        return true;
+      } catch (err) {
+        console.error('Import failed:', err);
+        return false;
       }
-      await this.load();
     },
 
     // ============ RESET ============

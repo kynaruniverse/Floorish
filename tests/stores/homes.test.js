@@ -94,7 +94,20 @@ describe('homes store', () => {
     await homes.resetAll();
     expect(get(homes)).toHaveLength(0);
 
-    await homes.importData(exported);
+    const ok = await homes.importData(exported);
+    expect(ok).toBe(true);
     expect(get(homes)).toHaveLength(1);
+  });
+
+  // Regression: importData() used to throw on invalid data instead of
+  // returning false, unlike inventory.importData()'s catch-and-return-
+  // boolean pattern. The settings page's combined backup file relies on
+  // both stores' importData resolving independently (never throwing) so
+  // one store's invalid/missing data can't prevent the other from
+  // importing its own part of the same file.
+  it('importData resolves to false on invalid data instead of throwing', async () => {
+    await expect(homes.importData('not valid json')).resolves.toBe(false);
+    await expect(homes.importData(JSON.stringify({ no: 'homes key' }))).resolves.toBe(false);
+    expect(get(homes)).toHaveLength(0);
   });
 });

@@ -97,6 +97,8 @@ function createInventoryStore() {
           id: generateId(),
           name,
           category: item.category || guessCategory(name),
+          shape: item.shape || 'box',
+          color: item.color || '#A89A82',
           dimensions: item.dimensions || { width: 1, height: 1, depth: 1 },
           modelData: item.modelData || null,
           thumbnail: item.thumbnail || null,
@@ -166,6 +168,8 @@ function createInventoryStore() {
       return this.add({
         name: `${item.name} (Copy)`,
         category: item.category,
+        shape: item.shape,
+        color: item.color,
         dimensions: { ...(item.dimensions || {}) },
         modelData: item.modelData,
         thumbnail: item.thumbnail,
@@ -227,6 +231,8 @@ function createInventoryStore() {
           await db.put('inventory', {
             ...item,
             id: item.id || generateId(),
+            shape: item.shape || 'box',
+            color: item.color || '#A89A82',
             dimensions: item.dimensions || { width: 1, height: 1, depth: 1 },
             colourVariants: item.colourVariants || [],
             tags: item.tags || []

@@ -10,27 +10,16 @@ your device.
 
 - 🏠 **2D Floor Plan Editor** — draw and drag rooms per floor, room templates, multi-floor support
 - 🧊 **3D Room View** — toggle any floor into an orbitable 3D view (walls, floors, colour) built from your plan data
-- 🛋️ **Furniture placement in 3D** — pick furniture from the built-in library and place it inside the 3D room view
+- 🛋️ **Furniture placement in 3D** — pick from the built-in catalogue or your own saved items (via **Your items** in the furniture picker — add a custom item with a name, shape, colour, and dimensions right from there) and place it inside the 3D room view
 - ↩️ **Undo / Redo** — full history across floor plan edits
 - 💾 **Local persistence** — everything stored in IndexedDB, works fully offline
 - 📤 **Import / Export** — JSON export/import of your whole home data
 - 📱 **PWA** — installable, works offline via a generated service worker + manifest
 - ✅ **Automated tests + CI** — Vitest unit tests for the stores/data layer, `svelte-check`, and a build gate all run on every push
 
-## 🧩 Built but not yet reachable from the UI
-
-- 📦 **Furniture Inventory (manual entry)** — the data layer (`src/lib/stores/inventory.js`)
-  fully supports adding items with name, category (auto-guessed), dimensions,
-  material, tags, notes, and colour variants, plus search and import/export.
-  There is currently **no screen that opens it** — it's not linked from any
-  route or nav item. Treat this as an open decision, not a shipped feature:
-  either a dedicated Inventory tab needs building, or this store should be
-  folded into the existing furniture-picker flow instead of running in
-  parallel with it.
-
 ## 🚧 Not built yet (roadmap, not shipped)
 
-- Photo-to-3D furniture scanning ("Magic Inventory")
+- Photo-to-3D furniture scanning ("Magic Inventory") — would write into the same items your custom furniture already uses
 - AI-assisted layout/redesign suggestions
 - AR viewer (WebXR)
 - Walkthrough (first-person) mode
